@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<!--
+/*******************************************************************************
+ *
+ * Copyright (c) 2015 Louay Bassbouss, Fraunhofer FOKUS, All rights reserved.
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3.0 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library. If not, see <http://www.gnu.org/licenses/>.
+ *
+ * AUTHORS: Louay Bassbouss (louay.bassbouss@fokus.fraunhofer.de)
+ *
+ ******************************************************************************/
+-->
+<html style="height: 100%;width: 100%; padding: 0; margin: 0; background-color: #FFFFFF;">
+
+<head lang="en">
+    <meta charset="UTF-8">
+    <title>HbbTV App</title>
+    <script type="text/javascript" src="js/hbbtvlib.js"></script>
+    <script type="text/javascript" src="http://code.jquery.com/jquery-1.11.3.min.js"></script>
+    <script type="text/javascript" src="js/hbbtv-manager-polyfill.js"></script>
+    <script>
+        window.onload = function () {
+            hbbtvlib_initialize();
+            hbbtvlib_show();
+        };
+    </script>
+</head>
+
+<body style="height: 100%;width: 100%; padding: 0; margin: 0; background-color: #FFFFFF; overflow: hidden;">
+    <h3>Sample HbbTV Application</h3>
+    <div style="float: left; width: 48%;">
+        <button id="discoverLaunchersBtn">Discover CS Launchers</button>
+        <br>
+        <div id="info"></div>
+        <br>
+        <ul id="csLaunchers">
+
+        </ul>
+    </div>
+    <div style="float: left; width: 48%; height: 90%">
+        <textarea id="log" style="width: 98%; height: 98%" disabled="true"></textarea>
+    </div>
+    <script type="text/javascript">
+        var log = function (msg) {
+            console.log(msg);
+            var logElem = $("#log");
+            logElem.val(logElem.val() + msg + "\n");
+            logElem.scrollTop(logElem[0].scrollHeight);
+        };
+        var parseParameters = function (query) {
+            var dict = {};
+            if (query) {
+                var params = query.split("&");
+                for (var i = 0; i < params.length; i++) {
+                    var index = params[i].indexOf("=");
+                    var key = index > -1 ? params[i].substr(0, index) : params[i];
+                    var value = index > -1 ? params[i].substr(index + 1) : "";
+                    if (typeof dict[key] == "undefined") {
+                        dict[key] = value;
+                    }
+                    else if (typeof dict[key] == "string") {
+                        dict[key] = [dict[key], value];
+                    }
+                    else if (typeof dict[key] == "object") {
+                        dict[key].push(value);
+                    }
+                };
+            }
+            return dict;
+        };
+        var qualifyURL = function (url) {
+            var a = document.createElement('a');
+            a.href = url;
+            return a.href;
+        };
+        var launchCsApp = function (enumId) {
+            var payload = payload = JSON.stringify({
+                "launch": [
+                    { "launchUrl": qualifyURL("cs-app.html") + "?app2appURL=" + csManager.getApp2AppRemoteBaseURL(), "appType": "html" }
+                ]
+            });
+            csManager.launchCSApp(enumId, payload, function (res) {
+                log("launch app result code " + res);
+            });
+        };
+        $(document).keydown(function (event) {
+            log("Key with code " + event.which + " pressed");
+        });
+        var csManager = oipfObjectFactory.createCSManager();
+        var app2appLocalBaseUrl = csManager.getApp2AppLocalBaseURL();
+        var searchParameters = parseParameters(location.search.substr(1));
+        var channel = searchParameters.channel || "org.mychannel.myapp";
+        var createConnection = function (index) {
+            var ws = new WebSocket(app2appLocalBaseUrl + channel);
+            ws.binaryType = "arraybuffer";
+            ws.onopen = function (evt) {
+                log("Connection " + index + " waiting ...");
+            };
+            ws.onclose = function (evt) {
+                log("Connection " + index + " closed.");
+            };
+            ws.onerror = function (evt) {
+                log("Connection error.");
+            };
+            ws.onmessage = function (evt) {
+                if (evt.data == "pairingcompleted") {
+                    log("connection " + index + " paired");
+                    ws.onmessage = function (evt) {
+                        if (typeof evt.data == "string") {
+                            log("Received Message: " + evt.data);
+                        }
+                        else {
+                            var data = new Int8Array(evt.data);
+                            log("Received Binary Message of " + data.length + " bytes: ");
+                        }
+                    };
+                    ws.send("Hello from HbbTV App: " + index);
+                    createConnection(index + 1);
+                } else {
+                    log("Unexpected message received from terminal.");
+                    ws.close();
+                }
+            };
+        };
+        createConnection(0);
+        $("#discoverLaunchersBtn").click(function () {
+            $("#info").html("Searching for cs launchers:  please wait ...");
+            $("#csLaunchers").empty();
+            $("#discoverLaunchersBtn").attr("disabled", true);
+            csManager.discoverCSLaunchers(function (csLaunchers) {
+                $("#discoverLaunchersBtn").attr("disabled", false);
+                $("#info").empty();
+                $(csLaunchers).each(function (i, csLauncher) {
+                    $("#csLaunchers").append("<li id='" + csLauncher.enum_id + "'>" + csLauncher.friendly_name + "  <button onclick='launchCsApp(" + csLauncher.enum_id + ")'>Launch</button></li>");
+                });
+                if (csLaunchers.length == 0) {
+                    $("#info").html("No cs launchers found. Click on the discover button to search again");
+                }
+                log(csLaunchers.length + " cs launchers found");
+            });
+        });
+    </script>
+</body>
+
+</html>

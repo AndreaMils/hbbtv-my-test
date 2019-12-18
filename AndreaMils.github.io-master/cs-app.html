@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<!-- http://www.example.com/cs-app.html -->
+<html>
+
+<head lang="en">
+    <meta charset="UTF-8">
+    <title>Companion Screen App</title>
+    <script type="text/javascript" src="js/hbbtv-manager-polyfill.js"></script>
+    <script type="text/javascript" src="http://code.jquery.com/jquery-1.11.3.min.js"></script>
+</head>
+
+<body>
+    <h1>CS App</h1>
+    <div style="float: left; width: 48%;">
+        <!-- <button id="discoverTerminalsBtn">Discover HbbTV Terminals</button> -->
+        <button onclick="discoverTerminals()">Discover HbbTV Terminals 2</button>
+        <br>
+        <div id="info"></div>
+        <br>
+        <ul id="terminals">
+
+        </ul>
+    </div>
+    <div style="float: left; width: 48%; height: 90%">
+        <pre id="log" style="width: 98%; height: 98%" disabled="false"></pre>
+    </div>
+
+    <script type="text/javascript">
+        var channel = "org.mychannel.myapp";
+        // create a TerminalManager instance to discover HbbTV Terminals and launch HbbTV Apps
+        // You need to append #port=<port> to the url in the browser.
+        var terminalManager = hbbtv && hbbtv.createTerminalManager();
+        // use the discoverTerminals supported by the TerminalManager to discover HbbTV Terminals
+        function discoverTerminals() {
+            terminalManager.discoverTerminals(function (terminals) {
+                if (terminals.length == 0) {
+                    console.log("No HbbTV Terminals found");
+                }
+                else {
+                    $("#info").empty();
+                    $(terminals).each(function (i, terminal) {
+                        $("#terminals").append("<li id='" + i + "'>" + terminal.friendly_name)
+                    });
+                    console.log(terminals.length, " Terminals found");
+                    var terminal = terminals[0];
+                    console.log("Launch HbbTV App on Terminal: ", terminal.friendly_name);
+                    launchHbbTVApp(terminal, "https://andreamils.github.io/hbbtv-app.html");
+                }
+            });
+        };
+
+
+        (function () {
+            var old = console.log;
+            var logger = document.getElementById('log');
+            console.log = function (message) {
+                if (typeof message == 'object') {
+                    logger.innerHTML += (JSON && JSON.stringify ? JSON.stringify(message) : message) + '<br />';
+                } else {
+                    logger.innerHTML += message + "<br />";
+                }
+            }
+        })();
+
+        // var log = function (msg) {
+        //             console.log(msg);
+        //             var logElem = $("#log");
+        //             logElem.val(logElem.val() + msg + "\n");
+        //             logElem.scrollTop(logElem[0].scrollHeight);
+        //         };
+
+        $("#discoverTerminalsBtn").click(function () {
+            $("#info").html("Searching for HbbTV Terminals:  please wait ...");
+            $("#terminals").empty();
+            $("#discoverTerminalsBtn").attr("disabled", true);
+            terminalManager.discoverTerminals(function (terminals) {
+                $("#discoverTerminalsBtn").attr("disabled", false);
+                $("#info").empty();
+                $(terminals).each(function (i, terminal) {
+                    $("#terminals").append("<li id='" + i + "'>" + terminal.friendly_name + "  <button class='launch' onclick='launchHbbTVApp(" + i + ")'>Launch</button>   <button class='connect' onclick='connect(" + i + ")'>Connect</button> <div class='log'></div></li>");
+                });
+                if (terminals.length == 0) {
+                    $("#info").html("No HbbTV Terminals found. Click on the discover button to search again");
+                }
+                log(terminals.length + " HbbTV terminals found");
+            });
+        });
+
+        //create a qualify Url to link html file
+        var qualifyURL = function (url) {
+            var a = document.createElement('a');
+            a.href = url;
+            return a.href
+        }
+        // Launch an HbbTV App on discovered terminal
+        var launchHbbTVApp = function (terminal, appUrl) {
+            var options = {
+                "orgId": 0,
+                "appId": 0,
+                "appUrlBase": appUrl,
+                "appLocation": "?channel=" + channel
+            };
+            terminalManager.launchHbbTVApp(terminal.enum_id, options, function (res) {
+                console.log("Launch HbbTV App result code", res);
+                console.log("Connect to HbbTV Terminal: ", terminal.friendly_name);
+                connect(terminal);
+            });
+        };
+        // Create a WebSocket connection to the App2App endpoint of the Terminal
+        var connect = function (terminal) {
+            var app2appRemoteBaseUrl = terminal && terminal.X_HbbTV_App2AppURL;
+            var ws = new WebSocket(app2appRemoteBaseUrl + channel);
+            ws.binaryType = "arraybuffer";
+            ws.onopen = function (evt) {
+                console.log("Connection waiting ...");
+            };
+            ws.onclose = function (evt) {
+                console.log("Connection closed.");
+            };
+            ws.onerror = function (evt) {
+                console.log("Connection error.");
+            };
+            ws.onmessage = function (evt) {
+                if (evt.data == "pairingcompleted") {
+                    console.log("connection paired");
+                    ws.onmessage = function (evt) {
+                        console.log("Received Message: " + evt.data);
+                    };
+                    var data = "Hello from Companion Screen";
+                    ws.send(data);
+                    var array = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+                    data = typeof Buffer != "undefined" ? new Buffer(array) : new Int8Array(array).buffer;
+                    ws.send(data);
+                } else {
+                    console.log("Unexpected message received from terminal.");
+                    ws.close();
+                }
+            };
+        };
+    </script>
+</body>
+
+</html>
